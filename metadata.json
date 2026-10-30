@@ -1,0 +1,6 @@
+{
+  "name": "DARKSPOT — Decision Completeness Intelligence",
+  "description": "Know what's missing before you decide. Uncover information gaps, contradictions, and outdated claims to verify decision readiness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
