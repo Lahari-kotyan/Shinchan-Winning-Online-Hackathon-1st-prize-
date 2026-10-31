@@ -70,3 +70,23 @@ export async function generateStructuredJson<T>(
     return fallbackFactory();
   }
 }
+
+/**
+ * Health check verifying live Gemini model connectivity
+ */
+export async function checkGeminiHealth(): Promise<{ healthy: boolean; model: string; error?: string }> {
+  const ai = getGenAIClient();
+  if (!ai) {
+    return { healthy: false, model: PRIMARY_MODEL, error: 'GEMINI_API_KEY is not configured.' };
+  }
+  try {
+    const response = await ai.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: 'Ping',
+    });
+    return { healthy: Boolean(response.text), model: PRIMARY_MODEL };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { healthy: false, model: PRIMARY_MODEL, error: msg };
+  }
+}

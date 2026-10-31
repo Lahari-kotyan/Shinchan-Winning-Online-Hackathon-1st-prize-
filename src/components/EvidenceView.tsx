@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Investigation, DecisionRequirement } from '../types/intelligence.ts';
+import { Investigation, DecisionRequirement, EvidenceSource, ExtractedClaim } from '../types/intelligence.ts';
 import { PriorityBadge, StatusBadge } from './StatusBadge.tsx';
 import {
   Search,
@@ -17,18 +17,22 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  FileSearch,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface EvidenceViewProps {
   investigation: Investigation;
   onSelectRequirement: (req: DecisionRequirement) => void;
   onOpenAddEvidenceModal?: () => void;
+  onInspectProvenance?: (source: EvidenceSource, claim?: ExtractedClaim) => void;
 }
 
 export const EvidenceView: React.FC<EvidenceViewProps> = ({
   investigation,
   onSelectRequirement,
   onOpenAddEvidenceModal,
+  onInspectProvenance,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSourceFilter, setSelectedSourceFilter] = useState<string>('all');
@@ -131,13 +135,24 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
-                    className="self-start md:self-center px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 shrink-0"
-                  >
-                    <span>{isExpanded ? 'Hide Raw Passage' : 'Inspect Raw Passage'}</span>
-                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
+                  <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+                    {onInspectProvenance && (
+                      <button
+                        onClick={() => onInspectProvenance(source)}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded transition-colors inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileSearch className="w-3.5 h-3.5 text-slate-600" />
+                        <span>Inspect Full Document</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setExpandedSourceId(isExpanded ? null : source.id)}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{isExpanded ? 'Hide Passage' : 'Raw Passage'}</span>
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Expanded Passage Drawer */}
@@ -250,28 +265,49 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({
                   {/* Verbatim Quotation Proof */}
                   <div className="bg-slate-50 p-3 rounded border border-slate-100 flex items-start gap-2.5 text-xs text-slate-700 italic">
                     <Quote className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                    <span>"{claim.verbatimQuote}"</span>
+                    <span className="flex-1">"{claim.verbatimQuote}"</span>
                   </div>
 
-                  {/* Source Attribution */}
+                  {/* Source Attribution & Provenance Actions */}
                   <div className="mt-3 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-[11px] text-slate-500 gap-2">
-                    <div>
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span>Source: <strong>{source?.title || 'Unknown Source'}</strong></span>
-                      <span className="mx-2">·</span>
-                      <span>Publisher: {source?.publisher}</span>
+                      <span className="mx-1">·</span>
+                      {claim.verificationStatus === 'VERIFIED_IN_SOURCE' ? (
+                        <span className="inline-flex items-center gap-1 font-mono font-bold text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          VERIFIED QUOTE
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                          AI EXTRACTED
+                        </span>
+                      )}
                     </div>
 
-                    {source?.url && (
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-slate-900 font-medium hover:underline inline-flex items-center gap-1"
-                      >
-                        <span>Verify at Origin</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {source && onInspectProvenance && (
+                        <button
+                          onClick={() => onInspectProvenance(source, claim)}
+                          className="text-slate-800 hover:text-slate-950 font-semibold hover:underline inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded transition-colors cursor-pointer"
+                        >
+                          <FileSearch className="w-3 h-3 text-slate-600" />
+                          <span>Inspect Verbatim Span</span>
+                        </button>
+                      )}
+
+                      {source?.url && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-slate-900 font-medium hover:underline inline-flex items-center gap-1"
+                        >
+                          <span>Verify at Origin</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

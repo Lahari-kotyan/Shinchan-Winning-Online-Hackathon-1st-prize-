@@ -23,13 +23,20 @@ export const ResolveConflictModal: React.FC<ResolveConflictModalProps> = ({
   isLoading,
 }) => {
   const [notes, setNotes] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   const [selectedClaimSource, setSelectedClaimSource] = useState<'claimA' | 'claimB' | 'external'>('claimB');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   if (!isOpen || !conflict) return null;
 
+  const isValid = notes.trim().length >= 20 || sourceUrl.trim().length > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!notes.trim()) return;
+    if (!isValid) {
+      setValidationError('Resolution requires a substantive explanation (minimum 20 characters) or a verified source URL.');
+      return;
+    }
 
     const fullResolution = `[Authority: ${
       selectedClaimSource === 'claimA'
@@ -37,10 +44,12 @@ export const ResolveConflictModal: React.FC<ResolveConflictModalProps> = ({
         : selectedClaimSource === 'claimB'
         ? conflict.claimB.sourceTitle
         : 'External Authoritative Clarification'
-    }] ${notes.trim()}`;
+    }] ${notes.trim()}${sourceUrl.trim() ? ` (Verification URL: ${sourceUrl.trim()})` : ''}`;
 
     await onResolve(conflict.id, fullResolution);
     setNotes('');
+    setSourceUrl('');
+    setValidationError(null);
   };
 
   return (
@@ -128,19 +137,49 @@ export const ResolveConflictModal: React.FC<ResolveConflictModalProps> = ({
             </label>
           </div>
 
-          {/* Resolution Notes */}
+          {/* Linked Verification URL */}
           <div>
             <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">
-              Formal Resolution Documentation <span className="text-rose-600">*</span>
+              Supporting Verification URL (Optional)
             </label>
+            <input
+              type="url"
+              value={sourceUrl}
+              onChange={e => {
+                setSourceUrl(e.target.value);
+                setValidationError(null);
+              }}
+              placeholder="https://official.domain.org/admissions/memo-march2026.pdf"
+              className="w-full text-xs text-slate-900 border border-slate-300 rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-slate-900"
+            />
+          </div>
+
+          {/* Resolution Notes */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Formal Resolution Documentation <span className="text-rose-600">*</span>
+              </label>
+              <span className={`text-[11px] font-mono ${notes.trim().length >= 20 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                {notes.trim().length}/20 chars min
+              </span>
+            </div>
             <textarea
               rows={3}
-              required
+              required={!sourceUrl.trim()}
               value={notes}
-              onChange={e => setNotes(e.target.value)}
+              onChange={e => {
+                setNotes(e.target.value);
+                setValidationError(null);
+              }}
               placeholder="e.g. Email confirmation received from Program Director Dr. Aris (March 2, 2026) stating the portal validation will strictly follow the 2026 policy announcement."
               className="w-full text-xs text-slate-900 border border-slate-300 rounded-md p-2.5 focus:outline-none focus:ring-1 focus:ring-slate-900"
             />
+            {validationError && (
+              <p className="text-xs text-rose-600 mt-1">
+                {validationError}
+              </p>
+            )}
           </div>
 
           <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
@@ -153,8 +192,8 @@ export const ResolveConflictModal: React.FC<ResolveConflictModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors"
+              disabled={isLoading || !isValid}
+              className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
             >
               {isLoading ? 'Updating...' : 'Save Resolution'}
             </button>

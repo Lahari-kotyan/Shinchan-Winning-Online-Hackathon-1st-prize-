@@ -23,6 +23,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, showIcon = tru
           <span>Supported</span>
         </span>
       );
+    case 'USER_ASSERTED':
+      return (
+        <span className={`inline-flex items-center gap-1.5 text-xs font-medium text-blue-800 ${className}`}>
+          {showIcon && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+          <span>User Asserted (Partial)</span>
+        </span>
+      );
     case 'PARTIALLY_SUPPORTED':
       return (
         <span className={`inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 ${className}`}>

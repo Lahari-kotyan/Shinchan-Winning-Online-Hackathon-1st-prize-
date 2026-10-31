@@ -11,6 +11,8 @@ import {
   ExtractedClaim,
   ContradictionFinding,
 } from '../../types/intelligence.ts';
+import { computeConflictId } from './hash.ts';
+import { computeDiscrepancyMath } from './normalize.ts';
 
 const CONTRADICTION_DETECTION_SYSTEM = `
 You are the Contradiction Analysis Engine of DARKSPOT.
@@ -101,7 +103,7 @@ export async function detectContradictions(
   >(CONTRADICTION_DETECTION_SYSTEM, prompt, fallbackFactory);
 
   const findings: ContradictionFinding[] = [];
-  rawFindings.forEach((f, idx) => {
+  rawFindings.forEach(f => {
     const claimA = claimMap.get(f.claimA_id);
     const claimB = claimMap.get(f.claimB_id);
     const req = requirements.find(r => r.id === f.requirementId);
@@ -116,8 +118,18 @@ export async function detectContradictions(
       claimB.contradictsClaimIds = claimB.contradictsClaimIds || [];
       if (!claimB.contradictsClaimIds.includes(claimA.id)) claimB.contradictsClaimIds.push(claimA.id);
 
+      const stableId = computeConflictId([claimA.id, claimB.id], f.type);
+      const dateA = claimA.publicationDate || srcA?.publicationDate;
+      const dateB = claimB.publicationDate || srcB?.publicationDate;
+      const mathResult = computeDiscrepancyMath(
+        `${claimA.claimText} ${claimA.verbatimQuote}`,
+        `${claimB.claimText} ${claimB.verbatimQuote}`,
+        dateA,
+        dateB
+      );
+
       findings.push({
-        id: `conflict-${idx + 1}`,
+        id: stableId,
         requirementId: req.id,
         requirementTitle: req.title,
         type: f.type,
@@ -127,7 +139,7 @@ export async function detectContradictions(
           sourceTitle: srcA?.title || 'Source A',
           statement: claimA.claimText,
           quote: claimA.verbatimQuote,
-          date: claimA.publicationDate || srcA?.publicationDate,
+          date: dateA,
         },
         claimB: {
           claimId: claimB.id,
@@ -135,10 +147,12 @@ export async function detectContradictions(
           sourceTitle: srcB?.title || 'Source B',
           statement: claimB.claimText,
           quote: claimB.verbatimQuote,
-          date: claimB.publicationDate || srcB?.publicationDate,
+          date: dateB,
         },
         impactAnalysis: f.impactAnalysis,
         suggestedResolution: f.suggestedResolution,
+        mathDelta: mathResult.isVerified ? mathResult.deltaText : undefined,
+        isCodeVerified: mathResult.isVerified,
       });
     }
   });

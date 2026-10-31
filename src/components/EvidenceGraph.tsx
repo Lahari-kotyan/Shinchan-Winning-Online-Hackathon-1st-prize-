@@ -33,12 +33,37 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
     const rawNodes: Node[] = [];
     const rawEdges: Edge[] = [];
 
+    // Layered X-coordinates for zero-collision topological visualization
+    const ROOT_X = 50;
+    const REQ_X = 380;
+    const CLAIMS_X = 760;
+    const CONFLICTS_X = 1140;
+    const ACTIONS_X = 1520;
+
+    // Calculate dynamic vertical height per requirement based on its child elements
+    let currentY = 60;
+    const reqPositions: { reqId: string; y: number }[] = [];
+
+    investigation.requirements.forEach(req => {
+      const reqClaims = investigation.claims.filter(c => c.requirementId === req.id);
+      const reqActions = investigation.verificationPlan.filter(a => a.requirementId === req.id);
+      const reqConflicts = investigation.contradictions.filter(c => c.requirementId === req.id);
+      const maxChildren = Math.max(reqClaims.length, reqActions.length, reqConflicts.length, 1);
+      const slotHeight = Math.max(160, maxChildren * 90);
+
+      reqPositions.push({ reqId: req.id, y: currentY });
+      currentY += slotHeight + 40;
+    });
+
+    const totalHeight = currentY;
+    const rootY = Math.max(120, totalHeight / 2 - 50);
+
     // Node 1: Root Decision Node
     const rootId = 'node-root-decision';
     rawNodes.push({
       id: rootId,
       type: 'default',
-      position: { x: 50, y: 300 },
+      position: { x: ROOT_X, y: rootY },
       data: {
         label: (
           <div className="p-3 text-left w-64 bg-slate-950 text-white rounded shadow-md border border-slate-800">
@@ -53,14 +78,9 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
       },
     });
 
-    const reqX = 400;
-    const reqSpacing = 160;
-    const totalReqHeight = investigation.requirements.length * reqSpacing;
-    const startReqY = Math.max(50, 300 - totalReqHeight / 2);
-
     investigation.requirements.forEach((req, idx) => {
       const reqId = `node-req-${req.id}`;
-      const reqY = startReqY + idx * reqSpacing;
+      const reqY = reqPositions[idx].y;
 
       const isConflicting = req.status === 'CONFLICTING';
       const isMissing = req.status === 'NOT_FOUND';
@@ -76,7 +96,7 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
 
       rawNodes.push({
         id: reqId,
-        position: { x: reqX, y: reqY },
+        position: { x: REQ_X, y: reqY },
         data: {
           label: (
             <div
@@ -112,17 +132,16 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
         markerEnd: { type: MarkerType.ArrowClosed },
       });
 
-      // Claims Column
+      // Claims Column (Lane 3: CLAIMS_X)
       if (filterMode === 'all' || filterMode === 'requirements') {
         const reqClaims = investigation.claims.filter(c => c.requirementId === req.id);
         reqClaims.forEach((claim, cIdx) => {
           const claimId = `node-claim-${claim.id}`;
-          const claimX = 750;
-          const claimY = reqY - 30 + cIdx * 70;
+          const claimY = reqY + cIdx * 80;
 
           rawNodes.push({
             id: claimId,
-            position: { x: claimX, y: claimY },
+            position: { x: CLAIMS_X, y: claimY },
             data: {
               label: (
                 <div className="p-2 text-left w-60 bg-white border border-slate-200 rounded text-[11px] shadow-xs">
@@ -146,23 +165,22 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
         });
       }
 
-      // Actions Column
+      // Actions Column (Lane 5: ACTIONS_X)
       if (filterMode === 'all' || filterMode === 'actions') {
         const reqActions = investigation.verificationPlan.filter(a => a.requirementId === req.id);
         reqActions.forEach((action, aIdx) => {
           const actId = `node-act-${action.id}`;
-          const actX = 1100;
-          const actY = reqY - 20 + aIdx * 75;
+          const actY = reqY + aIdx * 85;
 
           rawNodes.push({
             id: actId,
-            position: { x: actX, y: actY },
+            position: { x: ACTIONS_X, y: actY },
             data: {
               label: (
                 <div className="p-2 text-left w-60 bg-slate-900 text-white rounded text-[11px] shadow-xs">
                   <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono mb-0.5">
                     <span>ACTION [{action.priority}]</span>
-                    {action.completed && <span className="text-emerald-400">DONE</span>}
+                    {action.completed && <span className="text-emerald-400 font-bold">✓ DONE</span>}
                   </div>
                   <p className="font-medium line-clamp-2">
                     {action.whatNeedsVerification}
@@ -183,15 +201,17 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
       }
     });
 
-    // Add Contradiction Nodes & Cross-edges
+    // Contradiction Nodes (Lane 4: CONFLICTS_X)
     if (filterMode === 'all' || filterMode === 'conflicts') {
       investigation.contradictions.forEach((con, conIdx) => {
         const conId = `node-conflict-${con.id}`;
-        const parentReq = investigation.requirements.find(r => r.id === con.requirementId);
+        const parentReqIdx = investigation.requirements.findIndex(r => r.id === con.requirementId);
+        const parentReq = investigation.requirements[parentReqIdx];
+        const baseY = parentReqIdx >= 0 ? reqPositions[parentReqIdx].y : 60 + conIdx * 120;
 
         rawNodes.push({
           id: conId,
-          position: { x: 750, y: 50 + conIdx * 130 },
+          position: { x: CONFLICTS_X, y: baseY + (conIdx % 2) * 50 },
           data: {
             label: (
               <div
@@ -208,9 +228,11 @@ export const EvidenceGraph: React.FC<EvidenceGraphProps> = ({
                 <p className="text-[11px] mt-1 font-semibold leading-snug">
                   {con.requirementTitle}
                 </p>
-                <p className="text-[10px] text-rose-100 line-clamp-2 mt-1">
-                  {con.impactAnalysis}
-                </p>
+                {con.mathDelta && (
+                  <p className="text-[10px] font-mono bg-rose-800/80 px-1.5 py-0.5 rounded mt-1 font-bold">
+                    Δ {con.mathDelta}
+                  </p>
+                )}
                 <span className="text-[9px] text-rose-200 mt-1 block underline">
                   Inspect conflict details ↗
                 </span>

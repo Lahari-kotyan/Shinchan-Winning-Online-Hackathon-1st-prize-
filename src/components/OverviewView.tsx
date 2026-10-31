@@ -6,8 +6,14 @@
  */
 
 import React, { useState } from 'react';
-import { Investigation, DecisionRequirement, EvidenceSource } from '../types/intelligence.ts';
+import {
+  Investigation,
+  DecisionRequirement,
+  EvidenceSource,
+  ContradictionFinding,
+} from '../types/intelligence.ts';
 import { ReadinessBanner } from './ReadinessBanner.tsx';
+import { SensitivityPanel } from './SensitivityPanel.tsx';
 import { StatusBadge, PriorityBadge, InvestigationLifecycleBadge } from './StatusBadge.tsx';
 import {
   FileText,
@@ -37,6 +43,7 @@ interface OverviewViewProps {
   onOpenAddEvidenceModal?: () => void;
   onRunInvestigation?: (id: string) => Promise<void>;
   onDeleteSource?: (sourceId: string) => Promise<void>;
+  onResolveConflict?: (conflict: ContradictionFinding) => void;
   isRunningPipeline?: boolean;
 }
 
@@ -47,14 +54,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onOpenAddEvidenceModal,
   onRunInvestigation,
   onDeleteSource,
+  onResolveConflict,
   isRunningPipeline = false,
 }) => {
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
 
   const totalReqs = investigation.requirements.length;
-  const supportedCount = investigation.requirements.filter(r => r.status === 'SUPPORTED').length;
-  const conflictingCount = investigation.contradictions.length;
+  const supportedCount = investigation.requirements.filter(r => r.status === 'SUPPORTED' || r.status === 'USER_ASSERTED').length;
+  const conflictingCount = investigation.contradictions.filter(c => !c.resolved).length;
   const missingCount = investigation.requirements.filter(r => r.status === 'NOT_FOUND').length;
   const openActionsCount = investigation.verificationPlan.filter(a => !a.completed).length;
 
@@ -300,6 +308,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 4.5. Sensitivity Analysis: "What Flips This Verdict?" Simulator */}
+      {!isDraft && (
+        <SensitivityPanel
+          investigation={investigation}
+          onSelectRequirement={onSelectRequirement}
+          onResolveConflict={onResolveConflict}
+        />
+      )}
 
       {/* 5. Source Collection Panel */}
       <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">

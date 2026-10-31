@@ -15,16 +15,19 @@ import {
   FileCheck2,
   HelpCircle,
   Share2,
+  Mail,
 } from 'lucide-react';
 
 interface PlannerViewProps {
   investigation: Investigation;
   onToggleAction: (actionId: string) => void;
+  onDraftEmail?: (action: VerificationAction) => void;
 }
 
 export const PlannerView: React.FC<PlannerViewProps> = ({
   investigation,
   onToggleAction,
+  onDraftEmail,
 }) => {
   const [copied, setCopied] = useState(false);
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -220,6 +223,20 @@ ${actions
                       </div>
                     </div>
                   </div>
+
+                  {/* 1-Click Verification Email Generator */}
+                  {onDraftEmail && !action.completed && (
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        onClick={() => onDraftEmail(action)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 hover:text-slate-900 rounded transition-colors cursor-pointer"
+                        title="Generate pre-filled verification email to authority"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Draft Verification Inquiry Letter</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );

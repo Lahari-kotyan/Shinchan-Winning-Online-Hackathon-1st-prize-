@@ -318,8 +318,8 @@ export const SAMPLE_INVESTIGATIONS: Investigation[] = [
     ],
     readiness: {
       status: 'NOT_READY',
-      completenessScore: 48,
-      summary: 'Evidence completeness is at 48%. Two critical requirements suffer from active date and policy contradictions between the 2025 Handbook and 2026 Announcement, and the mandatory household income cap is entirely absent from all sources.',
+      completenessScore: 32,
+      summary: 'Evidence completeness is at 32%. Two critical requirements suffer from active date and policy contradictions between the 2025 Handbook and 2026 Announcement, and the mandatory household income cap is entirely absent from all sources.',
       supportedAspects: [
         'Renewal academic standing invariants (3.7 GPA + committee sign-off) are documented.',
         'Moonlighting limits (max 10 hours/week) are clearly bounded.',

@@ -19,10 +19,53 @@ import { detectContradictions } from './pipeline/conflictDetector.ts';
 import { analyzeInformationGaps } from './pipeline/gapAnalyzer.ts';
 import { generateVerificationPlan } from './pipeline/verificationPlanner.ts';
 import { assessDecisionReadiness } from './pipeline/readinessAssessor.ts';
+import { checkGeminiHealth, PRIMARY_MODEL } from './ai.ts';
 import { SAMPLE_INVESTIGATIONS } from './sampleData.ts';
-import { NewInvestigationPayload, EvidenceSource } from '../types/intelligence.ts';
+import {
+  NewInvestigationPayload,
+  EvidenceSource,
+  Investigation,
+  ContradictionFinding,
+  VerificationAction,
+} from '../types/intelligence.ts';
 
 export const apiRouter = Router();
+
+// GET health check
+apiRouter.get('/health', async (_req: Request, res: Response) => {
+  try {
+    const geminiHealth = await checkGeminiHealth();
+    res.json({
+      status: 'ok',
+      engine: geminiHealth.healthy ? 'gemini' : 'heuristic',
+      model: PRIMARY_MODEL,
+      geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
+      geminiLive: geminiHealth.healthy,
+      error: geminiHealth.error,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ status: 'error', error: msg });
+  }
+});
+
+// POST health check
+apiRouter.post('/health', async (_req: Request, res: Response) => {
+  try {
+    const geminiHealth = await checkGeminiHealth();
+    res.json({
+      status: 'ok',
+      engine: geminiHealth.healthy ? 'gemini' : 'heuristic',
+      model: PRIMARY_MODEL,
+      geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
+      geminiLive: geminiHealth.healthy,
+      error: geminiHealth.error,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ status: 'error', error: msg });
+  }
+});
 
 // GET all investigations
 apiRouter.get('/investigations', (_req: Request, res: Response) => {
@@ -104,9 +147,34 @@ apiRouter.delete('/investigations/:id/sources/:sourceId', async (req: Request, r
       inv.activityLog.push({
         timestamp: new Date().toISOString(),
         stage: 'SOURCE_REMOVED',
-        description: `Removed evidence source (${req.params.sourceId}). ${inv.sources.length} sources remain.`,
+        description: `Removed evidence source (${req.params.sourceId}). Re-evaluating claims and gaps...`,
         status: 'INFO',
       });
+    }
+
+    // Downstream pipeline recalculation
+    if (inv.requirements && inv.requirements.length > 0) {
+      const updatedConflicts = await detectContradictions(inv.requirements, inv.sources, inv.claims);
+      inv.contradictions = updatedConflicts;
+
+      const updatedReqs = await analyzeInformationGaps(
+        inv.requirements,
+        inv.sources,
+        inv.claims,
+        updatedConflicts
+      );
+      inv.requirements = updatedReqs;
+
+      const updatedPlan = await generateVerificationPlan(updatedReqs, updatedConflicts);
+      inv.verificationPlan = updatedPlan;
+
+      const activeConflicts = updatedConflicts.filter(c => !c.resolved);
+      const updatedReadiness = await assessDecisionReadiness(
+        inv.decisionQuestion,
+        updatedReqs,
+        activeConflicts
+      );
+      inv.readiness = updatedReadiness;
     }
 
     inv.updatedAt = new Date().toISOString();
@@ -119,17 +187,20 @@ apiRouter.delete('/investigations/:id/sources/:sourceId', async (req: Request, r
 
 // POST ingest new evidence source into existing investigation
 apiRouter.post('/investigations/:id/sources', async (req: Request, res: Response) => {
-  try {
-    const inv = getInvestigationById(req.params.id);
-    if (!inv) {
-      return res.status(404).json({ error: 'Investigation not found' });
-    }
+  const inv = getInvestigationById(req.params.id);
+  if (!inv) {
+    return res.status(404).json({ error: 'Investigation not found' });
+  }
 
+  // Work on a deep clone to prevent corrupting state if an AI step fails
+  const workingInv: Investigation = JSON.parse(JSON.stringify(inv));
+
+  try {
     const { url, title, content, publisher, publicationDate } = req.body;
     let newSource: EvidenceSource | null = null;
 
     if (url && url.trim()) {
-      const fetchResult = await fetchEvidenceFromUrl(url.trim(), inv.sources.length);
+      const fetchResult = await fetchEvidenceFromUrl(url.trim(), workingInv.sources.length);
       if (fetchResult.error) {
         return res.status(422).json({ error: fetchResult.error });
       }
@@ -139,7 +210,7 @@ apiRouter.post('/investigations/:id/sources', async (req: Request, res: Response
     } else if (content && content.trim()) {
       newSource = {
         id: `src-doc-${Date.now()}`,
-        title: title?.trim() || `Supplemental Document ${inv.sources.length + 1}`,
+        title: title?.trim() || `Supplemental Document ${workingInv.sources.length + 1}`,
         publisher: publisher?.trim() || 'User Upload',
         domain: 'user.document',
         publicationDate: publicationDate || new Date().toISOString().split('T')[0],
@@ -156,43 +227,87 @@ apiRouter.post('/investigations/:id/sources', async (req: Request, res: Response
       return res.status(400).json({ error: 'Provide a valid URL or text content' });
     }
 
-    inv.sources.push(newSource);
+    workingInv.sources.push(newSource);
 
     // Incremental extraction from this new source against current requirements
-    const newClaims = await extractClaimsFromSources(inv.requirements, [newSource]);
-    inv.claims.push(...newClaims);
+    const newClaims = await extractClaimsFromSources(workingInv.requirements, [newSource]);
+    const existingClaimIds = new Set(workingInv.claims.map(c => c.id));
+    for (const claim of newClaims) {
+      if (!existingClaimIds.has(claim.id)) {
+        workingInv.claims.push(claim);
+        existingClaimIds.add(claim.id);
+      }
+    }
 
     // Re-detect contradictions across all claims
-    const updatedConflicts = await detectContradictions(inv.requirements, inv.sources, inv.claims);
-    inv.contradictions = updatedConflicts;
+    const detectedConflicts = await detectContradictions(workingInv.requirements, workingInv.sources, workingInv.claims);
+    
+    // Preserve previously resolved conflicts
+    const resolvedConflictMap = new Map<string, ContradictionFinding>(
+      workingInv.contradictions
+        .filter((c: ContradictionFinding) => Boolean(c.resolved))
+        .map((c: ContradictionFinding) => [c.id, c])
+    );
+    const mergedConflicts: ContradictionFinding[] = detectedConflicts.map(c => {
+      const existing = resolvedConflictMap.get(c.id);
+      if (existing) {
+        return {
+          ...c,
+          resolved: true,
+          resolutionNotes: existing.resolutionNotes,
+          resolvedAt: existing.resolvedAt,
+        };
+      }
+      return c;
+    });
+    for (const [id, resolvedC] of resolvedConflictMap.entries()) {
+      if (!mergedConflicts.some(c => c.id === id)) {
+        mergedConflicts.push(resolvedC);
+      }
+    }
+    workingInv.contradictions = mergedConflicts;
 
     // Re-analyze information gaps
     const updatedReqs = await analyzeInformationGaps(
-      inv.requirements,
-      inv.sources,
-      inv.claims,
-      updatedConflicts
+      workingInv.requirements,
+      workingInv.sources,
+      workingInv.claims,
+      mergedConflicts
     );
-    inv.requirements = updatedReqs;
+    workingInv.requirements = updatedReqs;
 
-    // Re-run verification planner
-    const updatedPlan = await generateVerificationPlan(updatedReqs, updatedConflicts);
-    inv.verificationPlan = updatedPlan;
+    // Re-run verification planner, preserving completed state of existing actions
+    const updatedPlan = await generateVerificationPlan(updatedReqs, mergedConflicts);
+    const existingCompletedActionIds = new Set<string>(
+      workingInv.verificationPlan
+        .filter((a: VerificationAction) => Boolean(a.completed))
+        .map((a: VerificationAction) => a.id)
+    );
+    workingInv.verificationPlan = updatedPlan.map(action => ({
+      ...action,
+      completed: existingCompletedActionIds.has(action.id) || action.completed || false,
+    }));
 
     // Re-run readiness assessment
+    const activeConflicts = mergedConflicts.filter(c => !c.resolved);
     const updatedReadiness = await assessDecisionReadiness(
-      inv.decisionQuestion,
+      workingInv.decisionQuestion,
       updatedReqs,
-      updatedConflicts
+      activeConflicts
     );
-    inv.readiness = updatedReadiness;
-    inv.updatedAt = new Date().toISOString();
+    workingInv.readiness = updatedReadiness;
+    workingInv.updatedAt = new Date().toISOString();
 
-    upsertInvestigation(inv);
-    res.json(inv);
-  } catch (error) {
+    // Commit changes only after all pipeline steps succeed
+    upsertInvestigation(workingInv);
+    res.json(workingInv);
+  } catch (error: any) {
     console.error('Error adding evidence source:', error);
-    res.status(500).json({ error: 'Failed to ingest new evidence source' });
+    // Abort and return HTTP 502 Bad Gateway without corrupting valid state
+    res.status(502).json({
+      error: 'Intelligence pipeline execution failed while processing evidence. Existing investigation state was preserved.',
+      details: error?.message || String(error),
+    });
   }
 });
 
@@ -205,9 +320,18 @@ apiRouter.patch('/investigations/:id/conflicts/:conflictId/resolve', async (req:
     const conflict = inv.contradictions.find(c => c.id === req.params.conflictId);
     if (!conflict) return res.status(404).json({ error: 'Conflict not found' });
 
-    const { resolutionNotes } = req.body;
+    const { resolutionNotes, sourceUrl } = req.body;
+    const cleanNotes = (resolutionNotes || '').trim();
+    const cleanUrl = (sourceUrl || '').trim();
+
+    if (cleanNotes.length < 20 && !cleanUrl) {
+      return res.status(400).json({
+        error: 'Resolution requires a substantive justification note (minimum 20 characters) or a verified source URL.',
+      });
+    }
+
     conflict.resolved = true;
-    conflict.resolutionNotes = resolutionNotes || 'Resolved by decision investigator.';
+    conflict.resolutionNotes = cleanUrl ? `${cleanNotes} (Source: ${cleanUrl})` : cleanNotes;
     conflict.resolvedAt = new Date().toISOString();
 
     // Check if other unresolved conflicts remain for this requirement
@@ -217,8 +341,8 @@ apiRouter.patch('/investigations/:id/conflicts/:conflictId/resolve', async (req:
 
     const reqItem = inv.requirements.find(r => r.id === conflict.requirementId);
     if (reqItem && remainingConflicts.length === 0) {
-      reqItem.status = 'SUPPORTED';
-      reqItem.statusReason = `Contradiction officially resolved: ${conflict.resolutionNotes}`;
+      reqItem.status = 'USER_ASSERTED';
+      reqItem.statusReason = `User asserted resolution (partial confidence): ${conflict.resolutionNotes}`;
       reqItem.unresolvedGaps = [];
     }
 

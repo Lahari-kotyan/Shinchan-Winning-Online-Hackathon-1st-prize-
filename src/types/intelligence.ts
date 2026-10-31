@@ -7,11 +7,14 @@ export type RequirementPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type GapStatus = 
   | 'SUPPORTED'
+  | 'USER_ASSERTED'
   | 'PARTIALLY_SUPPORTED'
   | 'CONFLICTING'
   | 'OUTDATED'
   | 'INSUFFICIENT_EVIDENCE'
   | 'NOT_FOUND';
+
+export type RequirementStatus = GapStatus;
 
 export type SourceType = 
   | 'OFFICIAL_DOCUMENT'
@@ -58,6 +61,10 @@ export interface ExtractedClaim {
   publicationDate?: string;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   contradictsClaimIds?: string[];
+  startOffset?: number;
+  endOffset?: number;
+  isVerbatim?: boolean;
+  verificationStatus?: 'VERIFIED_IN_SOURCE' | 'UNVERIFIED_QUOTE';
 }
 
 export interface ContradictionFinding {
@@ -86,6 +93,8 @@ export interface ContradictionFinding {
   resolved?: boolean;
   resolutionNotes?: string;
   resolvedAt?: string;
+  mathDelta?: string;
+  isCodeVerified?: boolean;
 }
 
 export interface VerificationAction {
@@ -124,6 +133,7 @@ export interface ActivityLogEntry {
   stage: string;
   description: string;
   status: 'SUCCESS' | 'WARNING' | 'ERROR' | 'INFO';
+  engine?: 'gemini' | 'heuristic' | 'failed';
 }
 
 export interface Investigation {
@@ -143,6 +153,7 @@ export interface Investigation {
   isSample: boolean;
   errorMessage?: string;
   activityLog?: ActivityLogEntry[];
+  engine?: 'gemini' | 'heuristic' | 'failed';
 }
 
 export interface InvestigationDocumentInput {

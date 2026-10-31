@@ -1,6 +1,7 @@
 /**
  * DARKSPOT Pipeline — Stage 5: Prioritized Verification Planner
  * Converts unresolved gaps, contradictions, and outdated findings into concrete next actions.
+ * Uses stable deterministic action IDs [C-05] and preserves user-completed tasks across incremental re-runs.
  */
 
 import { generateStructuredJson } from '../ai.ts';
@@ -9,6 +10,7 @@ import {
   ContradictionFinding,
   VerificationAction,
 } from '../../types/intelligence.ts';
+import { computeActionId } from './hash.ts';
 
 const PLANNER_SYSTEM = `
 You are the Verification Action Planning Engine of DARKSPOT.
@@ -36,8 +38,10 @@ Return JSON array:
 
 export async function generateVerificationPlan(
   requirements: DecisionRequirement[],
-  contradictions: ContradictionFinding[]
+  contradictions: ContradictionFinding[],
+  existingActions: VerificationAction[] = []
 ): Promise<VerificationAction[]> {
+  const existingMap = new Map(existingActions.map(a => [a.id, a]));
   const unresolvedReqs = requirements.filter(r => r.status !== 'SUPPORTED');
 
   if (unresolvedReqs.length === 0 && contradictions.length === 0) {
@@ -64,17 +68,22 @@ Resolution: ${c.suggestedResolution}`
   const prompt = `Unresolved Requirements:\n${reqSummary}\n\nActive Conflicts:\n${conflictSummary || 'None'}\n\nGenerate prioritized verification actions.`;
 
   const fallbackFactory = (): VerificationAction[] => {
-    return unresolvedReqs.map((r, idx) => ({
-      id: `act-${idx + 1}`,
-      requirementId: r.id,
-      requirementTitle: r.title,
-      whatNeedsVerification: `Verify current terms for ${r.title}`,
-      whyItMatters: r.whyItMatters,
-      priority: r.priority === 'CRITICAL' ? 'CRITICAL' : r.priority === 'HIGH' ? 'HIGH' : 'MEDIUM',
-      suggestedAuthority: 'Primary governing authority or official documentation custodian',
-      concreteEvidenceRequired: `Current signed or timestamped documentation addressing ${r.evidenceNeeded}`,
-      completed: false,
-    }));
+    return unresolvedReqs.map(r => {
+      const what = `Verify current terms for ${r.title}`;
+      const id = computeActionId(r.id, what);
+      const prev = existingMap.get(id);
+      return {
+        id,
+        requirementId: r.id,
+        requirementTitle: r.title,
+        whatNeedsVerification: what,
+        whyItMatters: r.whyItMatters,
+        priority: r.priority === 'CRITICAL' ? 'CRITICAL' : r.priority === 'HIGH' ? 'HIGH' : 'MEDIUM',
+        suggestedAuthority: 'Primary governing authority or official documentation custodian',
+        concreteEvidenceRequired: `Current signed or timestamped documentation addressing ${r.evidenceNeeded}`,
+        completed: prev ? prev.completed : false,
+      };
+    });
   };
 
   const actions = await generateStructuredJson<
@@ -88,18 +97,22 @@ Resolution: ${c.suggestedResolution}`
     }>
   >(PLANNER_SYSTEM, prompt, fallbackFactory);
 
-  return actions.map((act, index) => {
+  return actions.map(act => {
     const parentReq = requirements.find(r => r.id === act.requirementId);
+    const reqId = act.requirementId || requirements[0]?.id || 'req-1';
+    const stableId = computeActionId(reqId, act.whatNeedsVerification);
+    const prev = existingMap.get(stableId);
+
     return {
-      id: `act-${index + 1}`,
-      requirementId: act.requirementId || requirements[0]?.id || 'req-1',
+      id: stableId,
+      requirementId: reqId,
       requirementTitle: parentReq?.title || 'Decision Requirement',
       whatNeedsVerification: act.whatNeedsVerification,
       whyItMatters: act.whyItMatters,
       priority: act.priority || 'HIGH',
       suggestedAuthority: act.suggestedAuthority,
       concreteEvidenceRequired: act.concreteEvidenceRequired,
-      completed: false,
+      completed: prev ? prev.completed : false,
     };
   });
 }

@@ -17,6 +17,7 @@ import { analyzeInformationGaps } from './gapAnalyzer.ts';
 import { generateVerificationPlan } from './verificationPlanner.ts';
 import { assessDecisionReadiness } from './readinessAssessor.ts';
 import { fetchEvidenceFromUrl } from './urlFetcher.ts';
+import { parsePdfDocument } from './pdfParser.ts';
 import { upsertInvestigation } from '../storage.ts';
 
 export async function runInvestigationPipeline(
@@ -166,12 +167,24 @@ export async function runInvestigationPipeline(
     // Stage 2: Ingest Sources
     const collectedSources: EvidenceSource[] = [];
     const ingestionErrors: string[] = [];
-
     // Process user documents and PDF uploads
     if (payload.documents && payload.documents.length > 0) {
-      payload.documents.forEach((doc, idx) => {
-        if (doc.content && doc.content.trim()) {
-          const isPdf = doc.fileName?.toLowerCase().endsWith('.pdf') || doc.mimeType === 'application/pdf';
+      for (let idx = 0; idx < payload.documents.length; idx++) {
+        const doc = payload.documents[idx];
+        const isPdf = doc.fileName?.toLowerCase().endsWith('.pdf') || doc.mimeType === 'application/pdf';
+        let passage = (doc.content || '').trim();
+
+        if (isPdf && doc.fileBase64) {
+          try {
+            const buf = Buffer.from(doc.fileBase64, 'base64');
+            const parsed = await parsePdfDocument(buf, doc.fileName || doc.title);
+            passage = parsed.text;
+          } catch (e) {
+            console.warn('[DARKSPOT Runner] PDF parsing error:', e);
+          }
+        }
+
+        if (passage) {
           collectedSources.push({
             id: `src-doc-${idx + 1}`,
             title: doc.title || doc.fileName || `Document ${idx + 1}`,
@@ -181,7 +194,7 @@ export async function runInvestigationPipeline(
             publicationDate: doc.publicationDate || new Date().toISOString().split('T')[0],
             retrievalDate: new Date().toISOString().split('T')[0],
             sourceType: isPdf ? 'OFFICIAL_DOCUMENT' : 'USER_UPLOAD',
-            extractedPassage: doc.content.trim(),
+            extractedPassage: passage,
             authorityScore: isPdf ? 92 : 85,
             freshnessScore: 90,
             reliabilityNotes: isPdf
@@ -189,7 +202,7 @@ export async function runInvestigationPipeline(
               : 'Uploaded text document provided directly by user for evidence synthesis.',
           });
         }
-      });
+      }
     }
 
     // Process raw notes

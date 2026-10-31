@@ -9,6 +9,9 @@ import {
   DecisionRequirement,
   NewInvestigationPayload,
   ContradictionFinding,
+  EvidenceSource,
+  ExtractedClaim,
+  VerificationAction,
 } from './types/intelligence.ts';
 import { Navbar, ActiveTab } from './components/Navbar.tsx';
 import { OverviewView } from './components/OverviewView.tsx';
@@ -17,6 +20,8 @@ import { GapsView } from './components/GapsView.tsx';
 import { PlannerView } from './components/PlannerView.tsx';
 import { EvidenceGraph } from './components/EvidenceGraph.tsx';
 import { RequirementDrawer } from './components/RequirementDrawer.tsx';
+import { SourceViewer } from './components/SourceViewer.tsx';
+import { DraftEmailModal } from './components/DraftEmailModal.tsx';
 import { NewInvestigationModal } from './components/NewInvestigationModal.tsx';
 import { AddEvidenceModal } from './components/AddEvidenceModal.tsx';
 import { ResolveConflictModal } from './components/ResolveConflictModal.tsx';
@@ -37,6 +42,9 @@ export default function App() {
     return 'landing';
   });
   const [selectedRequirement, setSelectedRequirement] = useState<DecisionRequirement | null>(null);
+  const [viewerSource, setViewerSource] = useState<EvidenceSource | null>(null);
+  const [viewerClaim, setViewerClaim] = useState<ExtractedClaim | null>(null);
+  const [actionToDraft, setActionToDraft] = useState<VerificationAction | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialQuestion, setModalInitialQuestion] = useState<string>('');
   const [isAddEvidenceModalOpen, setIsAddEvidenceModalOpen] = useState(false);
@@ -256,6 +264,23 @@ export default function App() {
     setIsModalOpen(true);
   };
 
+  // Inspect verbatim provenance drawer
+  const handleOpenProvenance = (source: EvidenceSource, claim?: ExtractedClaim) => {
+    setViewerSource(source);
+    setViewerClaim(claim || null);
+  };
+
+  // Direct claim provenance inspection across views
+  const handleInspectClaimProvenance = (claimId: string, sourceId: string) => {
+    if (!activeInvestigation) return;
+    const source = activeInvestigation.sources.find(s => s.id === sourceId) || null;
+    const claim = activeInvestigation.claims.find(c => c.id === claimId) || null;
+    if (source) {
+      setViewerSource(source);
+      setViewerClaim(claim);
+    }
+  };
+
   // Open active investigation workspace
   const handleOpenWorkspace = () => {
     if (investigations.length > 0 && !activeInvestigationId) {
@@ -346,6 +371,11 @@ export default function App() {
                 investigation={activeInvestigation}
                 onSelectRequirement={setSelectedRequirement}
                 onNavigateToTab={setCurrentTab}
+                onOpenAddEvidenceModal={() => setIsAddEvidenceModalOpen(true)}
+                onRunInvestigation={handleRunInvestigation}
+                onDeleteSource={handleDeleteSource}
+                onResolveConflict={setConflictToResolve}
+                isRunningPipeline={isSubmitting}
               />
             )}
 
@@ -354,6 +384,7 @@ export default function App() {
                 investigation={activeInvestigation}
                 onSelectRequirement={setSelectedRequirement}
                 onOpenAddEvidenceModal={() => setIsAddEvidenceModalOpen(true)}
+                onInspectProvenance={handleOpenProvenance}
               />
             )}
 
@@ -363,6 +394,7 @@ export default function App() {
                 onSelectRequirement={setSelectedRequirement}
                 onNavigateToPlanner={() => setCurrentTab('planner')}
                 onOpenResolveConflictModal={setConflictToResolve}
+                onInspectClaimProvenance={handleInspectClaimProvenance}
               />
             )}
 
@@ -370,6 +402,7 @@ export default function App() {
               <PlannerView
                 investigation={activeInvestigation}
                 onToggleAction={handleToggleAction}
+                onDraftEmail={setActionToDraft}
               />
             )}
 
@@ -467,6 +500,29 @@ export default function App() {
           onClose={() => setIsAuditModalOpen(false)}
         />
       )}
+
+      {/* Interactive Verbatim Provenance Drawer */}
+      <SourceViewer
+        isOpen={Boolean(viewerSource)}
+        onClose={() => {
+          setViewerSource(null);
+          setViewerClaim(null);
+        }}
+        source={viewerSource}
+        activeClaim={viewerClaim}
+        allClaims={activeInvestigation?.claims || []}
+        onSelectClaim={setViewerClaim}
+      />
+
+      {/* 1-Click Verification Email Drafter Modal */}
+      <DraftEmailModal
+        isOpen={Boolean(actionToDraft)}
+        onClose={() => setActionToDraft(null)}
+        action={actionToDraft}
+        decisionQuestion={activeInvestigation?.decisionQuestion || ''}
+        sources={activeInvestigation?.sources || []}
+        conflicts={activeInvestigation?.contradictions || []}
+      />
 
       {/* Subtle, Professional Footer */}
       <footer className="border-t border-slate-200 bg-white py-6 mt-12 text-xs text-slate-500">

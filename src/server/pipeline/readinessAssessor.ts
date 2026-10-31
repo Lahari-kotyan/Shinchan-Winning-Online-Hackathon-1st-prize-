@@ -19,6 +19,7 @@ const PRIORITY_WEIGHTS: Record<string, number> = {
 
 const STATUS_MULTIPLIERS: Record<string, number> = {
   SUPPORTED: 1.0,
+  USER_ASSERTED: 0.65,
   PARTIALLY_SUPPORTED: 0.45,
   OUTDATED: 0.2,
   INSUFFICIENT_EVIDENCE: 0.15,

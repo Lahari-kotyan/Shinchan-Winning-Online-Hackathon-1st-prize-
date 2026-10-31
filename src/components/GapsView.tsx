@@ -16,6 +16,8 @@ import {
   ArrowRight,
   ExternalLink,
   ChevronRight,
+  Calculator,
+  FileSearch,
 } from 'lucide-react';
 
 interface GapsViewProps {
@@ -23,6 +25,7 @@ interface GapsViewProps {
   onSelectRequirement: (req: DecisionRequirement) => void;
   onNavigateToPlanner: () => void;
   onOpenResolveConflictModal?: (conflict: ContradictionFinding) => void;
+  onInspectClaimProvenance?: (claimId: string, sourceId: string) => void;
 }
 
 export const GapsView: React.FC<GapsViewProps> = ({
@@ -30,6 +33,7 @@ export const GapsView: React.FC<GapsViewProps> = ({
   onSelectRequirement,
   onNavigateToPlanner,
   onOpenResolveConflictModal,
+  onInspectClaimProvenance,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'conflicts' | 'missing' | 'outdated' | 'partial'>('conflicts');
 
@@ -135,34 +139,69 @@ export const GapsView: React.FC<GapsViewProps> = ({
                       )}
                     </div>
 
+                    {/* Code-Verified Discrepancy Math Badge */}
+                    {conflict.mathDelta && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50/90 border border-amber-200/90 rounded-md text-amber-950 text-xs font-mono">
+                        <Calculator className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>Code-Verified Discrepancy: <strong>{conflict.mathDelta}</strong></span>
+                        {conflict.isCodeVerified && (
+                          <span className="text-[10px] bg-amber-200/70 text-amber-900 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ml-auto">
+                            DETERMINISTIC MATH
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Side-by-Side Incompatible Claim Comparison */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Claim A */}
-                      <div className="p-3.5 bg-slate-50 rounded-md border border-slate-200 text-xs space-y-2">
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
-                          <span className="font-bold text-slate-800 truncate">{conflict.claimA.sourceTitle}</span>
-                          <span>{conflict.claimA.date || 'Undated'}</span>
+                      <div className="p-3.5 bg-slate-50 rounded-md border border-slate-200 text-xs space-y-2 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                            <span className="font-bold text-slate-800 truncate">{conflict.claimA.sourceTitle}</span>
+                            <span>{conflict.claimA.date || 'Undated'}</span>
+                          </div>
+                          <p className="font-semibold text-slate-900 text-sm">
+                            {conflict.claimA.statement}
+                          </p>
+                          <p className="text-slate-600 italic bg-white p-2 rounded border border-slate-100">
+                            "{conflict.claimA.quote}"
+                          </p>
                         </div>
-                        <p className="font-semibold text-slate-900 text-sm">
-                          {conflict.claimA.statement}
-                        </p>
-                        <p className="text-slate-600 italic bg-white p-2 rounded border border-slate-100">
-                          "{conflict.claimA.quote}"
-                        </p>
+                        {onInspectClaimProvenance && (
+                          <button
+                            onClick={() => onInspectClaimProvenance(conflict.claimA.claimId, conflict.claimA.sourceId)}
+                            className="mt-2 text-[11px] font-medium text-slate-700 hover:text-slate-900 hover:underline inline-flex items-center gap-1 cursor-pointer self-start"
+                          >
+                            <FileSearch className="w-3 h-3 text-slate-500" />
+                            <span>Inspect verbatim quote in source</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* Claim B */}
-                      <div className="p-3.5 bg-slate-50 rounded-md border border-slate-200 text-xs space-y-2">
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
-                          <span className="font-bold text-slate-800 truncate">{conflict.claimB.sourceTitle}</span>
-                          <span>{conflict.claimB.date || 'Undated'}</span>
+                      <div className="p-3.5 bg-slate-50 rounded-md border border-slate-200 text-xs space-y-2 flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                            <span className="font-bold text-slate-800 truncate">{conflict.claimB.sourceTitle}</span>
+                            <span>{conflict.claimB.date || 'Undated'}</span>
+                          </div>
+                          <p className="font-semibold text-slate-900 text-sm">
+                            {conflict.claimB.statement}
+                          </p>
+                          <p className="text-slate-600 italic bg-white p-2 rounded border border-slate-100">
+                            "{conflict.claimB.quote}"
+                          </p>
                         </div>
-                        <p className="font-semibold text-slate-900 text-sm">
-                          {conflict.claimB.statement}
-                        </p>
-                        <p className="text-slate-600 italic bg-white p-2 rounded border border-slate-100">
-                          "{conflict.claimB.quote}"
-                        </p>
+                        {onInspectClaimProvenance && (
+                          <button
+                            onClick={() => onInspectClaimProvenance(conflict.claimB.claimId, conflict.claimB.sourceId)}
+                            className="mt-2 text-[11px] font-medium text-slate-700 hover:text-slate-900 hover:underline inline-flex items-center gap-1 cursor-pointer self-start"
+                          >
+                            <FileSearch className="w-3 h-3 text-slate-500" />
+                            <span>Inspect verbatim quote in source</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
